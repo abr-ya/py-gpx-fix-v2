@@ -23,6 +23,8 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
+After pulling changes, run `pip install -e ".[dev]"` again so new console scripts (e.g. `gpx-clean-subset`) appear under `.venv/bin`. Use a shell with the venv activated (`source .venv/bin/activate`), or call the module directly (see below).
+
 ## CLI
 
 **Arguments**
@@ -59,6 +61,24 @@ gpx-clean input.gpx -o cleaned.gpx --max-speed 12 --max-acceleration 0 --min-dt 
 ```
 
 Output GPX gets an English provenance line and `filtered` appended to `<keywords>`.
+
+## Coordinate subset (`gpx-clean-subset`)
+
+Use this when you have a **timed** GPX (e.g. `cleaned.gpx`) and a **reference** GPX with the **same** lat/lon points (possibly a subset) but **without** timestamps. The command keeps only source trackpoints whose coordinates appear in the reference segment-by-segment; **track and segment counts must match** between the two files. Matching is **strict** by default (`--coord-epsilon-deg 0`); set a small epsilon if XML round-trip shifts floats slightly.
+
+Design: [docs/COORDINATE_SUBSET_PLAN.md](docs/COORDINATE_SUBSET_PLAN.md).
+
+```bash
+gpx-clean-subset cleaned.gpx -r reference_no_time.gpx -o cleaned2.gpx --coord-epsilon-deg 0
+```
+
+If the shell reports “command not found”, activate `.venv` and reinstall as above, or run:
+
+```bash
+python -m gpx_clean.cli_subset cleaned.gpx -r reference_no_time.gpx -o cleaned2.gpx --coord-epsilon-deg 0
+```
+
+The output appends an English provenance line and adds `subset` to `<keywords>`.
 
 ## Limitations
 

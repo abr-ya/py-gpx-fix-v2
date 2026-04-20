@@ -19,6 +19,7 @@ dev = ["pytest>=7.0"]
 
 [project.scripts]
 gpx-clean = "gpx_clean.cli:main"
+gpx-clean-subset = "gpx_clean.cli_subset:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

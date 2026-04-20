@@ -12,10 +12,22 @@ import numpy as np
 from gpx_clean import __version__
 from gpx_clean.filter import filter_trackpoint_mask
 from gpx_clean.smooth import moving_average_lat_lon
+from gpx_clean.subset import assert_matching_track_layout, filter_segment_points_by_reference
 
 
 @dataclass
 class CleanStats:
+    trackpoints_before: int
+    trackpoints_after: int
+    segments_processed: int
+
+    @property
+    def removed(self) -> int:
+        return self.trackpoints_before - self.trackpoints_after
+
+
+@dataclass
+class SubsetStats:
     trackpoints_before: int
     trackpoints_after: int
     segments_processed: int
@@ -70,6 +82,23 @@ def apply_provenance(
     )
     gpx.description = _append_description(gpx.description, line)
     gpx.keywords = _append_keywords(gpx.keywords)
+
+
+def apply_subset_provenance(
+    gpx: gpxpy.gpx.GPX,
+    *,
+    stats: SubsetStats,
+    coord_epsilon_deg: float,
+) -> None:
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    eps_part = f"coord_epsilon_deg={coord_epsilon_deg:g}" if coord_epsilon_deg else "coord_epsilon_deg=0 (strict)"
+    line = (
+        f"Coordinate subset with gpx-clean {__version__} at {ts}; "
+        f"kept {stats.trackpoints_after}/{stats.trackpoints_before} trackpoints "
+        f"({stats.removed} dropped); {eps_part}"
+    )
+    gpx.description = _append_description(gpx.description, line)
+    gpx.keywords = _append_keywords(gpx.keywords, tag="subset")
 
 
 def _segment_to_arrays(segment: gpxpy.gpx.GPXTrackSegment) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -182,4 +211,60 @@ def clean_gpx_file(
         smooth_window=smooth_window,
     )
     save_gpx(gpx, output_path)
+    return stats
+
+
+def subset_gpx(
+    gpx_source: gpxpy.gpx.GPX,
+    gpx_reference: gpxpy.gpx.GPX,
+    *,
+    coord_epsilon_deg: float = 0.0,
+) -> SubsetStats:
+    assert_matching_track_layout(gpx_source, gpx_reference)
+    raw_total = sum(len(s.points) for t in gpx_source.tracks for s in t.segments)
+    total_after = 0
+    segments_n = 0
+
+    for track_s, track_r in zip(gpx_source.tracks, gpx_reference.tracks):
+        for seg_s, seg_r in zip(track_s.segments, track_r.segments):
+            segments_n += 1
+            pts = seg_s.points
+            if not pts:
+                seg_s.points = []
+                continue
+
+            _, _, times = _segment_to_arrays(seg_s)
+            _validate_times(times)
+
+            seg_s.points = filter_segment_points_by_reference(
+                pts,
+                seg_r.points,
+                coord_epsilon_deg=coord_epsilon_deg,
+            )
+            total_after += len(seg_s.points)
+
+    stats = SubsetStats(
+        trackpoints_before=raw_total,
+        trackpoints_after=total_after,
+        segments_processed=segments_n,
+    )
+    apply_subset_provenance(gpx_source, stats=stats, coord_epsilon_deg=coord_epsilon_deg)
+    return stats
+
+
+def subset_gpx_file(
+    source_path: Path,
+    reference_path: Path,
+    output_path: Path,
+    *,
+    coord_epsilon_deg: float = 0.0,
+) -> SubsetStats:
+    gpx_source = load_gpx(source_path)
+    gpx_reference = load_gpx(reference_path)
+    stats = subset_gpx(
+        gpx_source,
+        gpx_reference,
+        coord_epsilon_deg=coord_epsilon_deg,
+    )
+    save_gpx(gpx_source, output_path)
     return stats
